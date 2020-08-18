@@ -62,7 +62,7 @@ end
 -- @param queue the wrapped tx queue
 -- @param mode optional, either "cbr", "poisson", or "custom". Defaults to custom.
 -- @param delay optional, inter-departure time in nanoseconds for cbr, 1/lambda (average) for poisson
-function mod:new(queue, mode, delay)
+function mod:new(core, queue, mode, delay)
 	mode = mode or "custom"
 	if mode ~= "poisson" and mode ~= "cbr" and mode ~= "custom" then
 		log:fatal("Unsupported mode " .. mode)
@@ -76,7 +76,7 @@ function mod:new(queue, mode, delay)
 		ctl = memory.alloc("struct limiter_control*", ffi.sizeof("struct limiter_control"))
 	}, rateLimiter)
 	ffi.fill(obj.ctl, ffi.sizeof("struct limiter_control"))
-	mg.startTask("__MG_RATE_LIMITER_MAIN", obj.ring, queue.id, queue.qid, mode, delay, queue.dev:getLinkStatus().speed, obj.ctl)
+	mg.startTaskOnCore(core, "__MG_RATE_LIMITER_MAIN", obj.ring, queue.id, queue.qid, mode, delay, queue.dev:getLinkStatus().speed, obj.ctl)
 	return obj
 end
 

@@ -120,6 +120,7 @@ namespace rate_limiter {
 		uint64_t id_cycles = (uint64_t) (target / (1000000000.0 / ((double) tsc_hz)));
 		uint64_t next_send = 0;
 		struct rte_mbuf* bufs[batch_size];
+		int stride_log = 3;
 		while (libmoon::is_running(0)) {
 			int n = ring_dequeue(ring, reinterpret_cast<void**>(bufs), batch_size);
 			uint64_t cur = rte_get_tsc_cycles();
@@ -128,14 +129,21 @@ namespace rate_limiter {
 				next_send = cur;
 			}
 			if (n) {
-				for (int i = 0; i < n; i++) {
+				for (int i = 0; i < n; i += (1 << stride_log)) {
 					while ((cur = rte_get_tsc_cycles()) < next_send);
-					next_send += id_cycles;
-					while (rte_eth_tx_burst(device, queue, bufs + i, 1) == 0) {
-						// mellanox nics like to not accept packets when stopping for... reasons
-						if (!ctl->running()) {
-							return;
+					next_send += id_cycles << stride_log;
+					int sent = 0;
+					while (sent < (1 << stride_log)) {
+						int tmp = 0;
+						tmp = rte_eth_tx_burst(device, queue, bufs + i + sent, (1 << stride_log) - sent);
+						while (!tmp) {
+							// mellanox nics like to not accept packets when stopping for... reasons
+							if (!ctl->running()) {
+								return;
+							}
+							tmp = rte_eth_tx_burst(device, queue, bufs + i + sent, (1 << stride_log) - sent);
 						}
+						sent += tmp;
 					}
 				}
 				ctl->count_packets(n);

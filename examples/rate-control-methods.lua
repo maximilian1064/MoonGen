@@ -8,7 +8,7 @@ local log     = require "log"
 local limiter = require "software-ratecontrol"
 
 local PKT_SIZE	= 60
-local ETH_DST	= "11:12:13:14:15:16"
+local ETH_DST	= "10:12:13:14:15:16"
 
 function master(txPort, rate, rc, pattern, threads)
 	if not txPort or not rate or not rc then
@@ -17,10 +17,10 @@ function master(txPort, rate, rc, pattern, threads)
 	rate = rate or 2
 	threads = threads or 1
 	pattern = pattern or "cbr"
-	if pattern == "cbr" and threads ~= 1 then
-		return log:error("cbr only supports one thread")
-	end
-	local txDev = device.config{port = txPort, txQueues = threads, disableOffloads = rc ~= "moongen"}
+	-- if pattern == "cbr" and threads ~= 1 then
+		-- return log:error("cbr only supports one thread")
+	-- end
+	local txDev = device.config{port = txPort, txQueues = threads, disable_offloads=true}
 	device.waitForLinks()
 	stats.startStatsTask{txDevices = {txDev}}
 	for i = 1, threads do
@@ -42,25 +42,35 @@ function loadSlave(queue, txDev, rate, rc, pattern, rateLimiter, threadId, numTh
 		}
 	end)
 	if rc == "hw" then
-		local bufs = mem:bufArray()
+		local bufs = mem:bufArray(8)
+		local c = 0
 		if pattern ~= "cbr" then
 			return log:error("HW only supports CBR")
 		end
-		queue:setRate(rate * (PKT_SIZE + 4) * 8)
+		-- queue:setRate(rate * (PKT_SIZE + 4) * 8)
 		mg.sleepMillis(100) -- for good meaasure
 		while mg.running() do
 			bufs:alloc(PKT_SIZE)
+	--		for i, buf in ipairs(bufs) do
+	--			-- dump first 3 packets
+	--		   	if c < 3 then
+	--		   		buf:dump()
+	--		   		c = c + 1
+	--		   	end
+	--		end
 			queue:send(bufs)
 		end
 	elseif rc == "sw" then
 		-- larger batch size is useful when sending it through a rate limiter
 		local bufs = mem:bufArray(128)
-		local linkSpeed = txDev:getLinkStatus().speed
+		-- local linkSpeed = txDev:getLinkStatus().speed
+		local linkSpeed = 100000
+		print(linkSpeed)
 		while mg.running() do
 			bufs:alloc(PKT_SIZE)
 			if pattern == "custom" then
 				for _, buf in ipairs(bufs) do
-					buf:setDelay(rate * linkSpeed / 8)
+					buf:setDelay(0)
 				end
 			end
 			rateLimiter:send(bufs)
